@@ -17,6 +17,9 @@ from threading import local
 from django.conf import settings
 from django.core.cache.backends.base import InvalidCacheBackendError
 from django.core.cache.backends.memcached import BaseMemcachedCache, DEFAULT_TIMEOUT
+import sys
+from pickle import load as pickle_load
+from io import BytesIO
 
 try:
     import pylibmc
@@ -47,6 +50,16 @@ COMPRESS_KWARGS = {
     'compress_level': COMPRESS_LEVEL,
 }
 
+class MemcachedClient(pylibmc.Client):
+
+    if sys.version_info.major >= 3:
+        PYLIBMC_FLAG_PICKLE = 1
+    
+        def deserialize(self, value, flags):
+            if flags & self.PYLIBMC_FLAG_PICKLE:
+                return pickle_load(BytesIO(value), encoding=u"latin1")
+            return super(MemcachedClient, self).deserialize(value, flags)
+            
 
 class PyLibMCCache(BaseMemcachedCache):
 
@@ -75,7 +88,7 @@ class PyLibMCCache(BaseMemcachedCache):
                 'username': self._username,
                 'password': self._password
             })
-        client = self._lib.Client(self._servers, **client_kwargs)
+        client = MemcachedClient(self._servers, **client_kwargs)
         if self._options:
             client.behaviors = self._options
 
@@ -144,6 +157,10 @@ class PyLibMCCache(BaseMemcachedCache):
     def set_many(self, *args, **kwargs):
         try:
             return super(PyLibMCCache, self).set_many(*args, **kwargs)
+        except pylibmc.ServerError:
+            log.error('ServerError set_many args = %s kwargs = %s' % (str(args), str(kwargs)),
+                      exc_info=True)
+            return False
         except MemcachedError as e:
             log.error('MemcachedError: %s', e, exc_info=True)
             return False
