@@ -28,6 +28,14 @@ except ImportError:
     raise InvalidCacheBackendError('Could not import pylibmc.')
 
 
+if sys.version_info.major == 3 and sys.version_info.minor < 8:
+    # for the upgrade from python version earlier than 3.8
+    try:
+        from pickle5 import load as pickle_load
+    except ImportError:
+        pass
+
+
 log = logging.getLogger('django.pylibmc')
 
 
